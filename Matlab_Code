@@ -1,0 +1,124 @@
+%% dATA mODELLING and Statistical analysis of Daily Bike-renting from UCI
+%% < https://archive.ics.uci.edu/ml/datasets/bike+sharing+dataset > %%
+R=readtable('day.csv');  %,'Range','B2:O9358');
+A=table2array(R(2:end,[11 12 13 16]));
+% N = no. of Observations/instances
+N=length(A(:,1));
+% adding a column of ones to the regressors Matrix
+A=[ones(N,1),A];
+p=length(A(1,:));
+
+%% Data Visualisation
+%Box plot
+figure
+boxplot(A(:,5))
+title(' Boxplot for Bike-Rent Count')
+xlabel('Bike-Rent')
+ylabel('Count')
+print('boxplot','-dpng') 
+% histogram plot
+figure
+histogram(A(:,end),50)
+title('histogram for Bike-Rent Count')
+xlabel('Bike-Rent')
+ylabel('Count')
+print('histogram','-dpng') 
+% Scatter plot
+figure
+scatter(A(:,2),A(:,end),'.k')
+title('Scatter plot of Rent-count v/s Temperature')
+xlabel('Avg. Temperature in degrees')
+ylabel('Rent-Cont')
+print('scatter plot','-dpng') 
+
+%% mean hypothesis testing of response and data split
+m= mean(A(:,end));
+[h,pvalue,ci,stats]=ttest(A(:,end),m,'Alpha',0.05);
+% Data split
+TData=A(1:500,:);
+VData=A(501:end,:);
+
+%% M Linear Regression 
+[b_mlr,bint_mlr,r_mlr,rint_mlr,stats_mlr] = regress(TData(:,5),TData(:,1:4),0.05);
+MSE_MLR = immse(TData(:,1:4)*b_mlr,TData(:,5));
+figure
+scatter3(TData(:,2),TData(:,3),TData(:,5),'.r')
+hold on
+x1fit = linspace(min(TData(:,2)),max(TData(:,2)),10);
+x2fit = linspace(min(TData(:,3)),max(TData(:,3)),10);
+[X1FIT,X2FIT] = meshgrid(x1fit,x2fit);
+YFIT = b_mlr(1) + b_mlr(2)*X1FIT + b_mlr(3)*X2FIT ;
+mesh(X1FIT,X2FIT,YFIT)
+xlabel('Var1')
+ylabel('Var2')
+zlabel('Count')
+view(3)
+hold off
+print('MLR SurfacePlot','-dpng')
+fileID = fopen('CLL_798.txt','w');
+fprintf(fileID,'%12s %12s %12s %12s %12s \r\n','Regression Class',' R-Value ', ' MSE_Value ', 'F-Test' , 'P-Value' );
+fprintf(fileID,'%12s %12.4d %12.4d %12.4d %12.4d \r\n','Multiple Linear ', stats_mlr(1) , MSE_MLR , stats_mlr(2) , stats_mlr(1) );
+
+%% Simple Linear Regression
+MSE_SLR=[];
+R_SLR=[];
+B_SLR=[];
+Stats_SLR = ([]);
+for i=2:p-1
+[b_slr,bint_slr,r_slr,rint_slr,stats_slr] = regress(TData(:,end),[TData(:,1),TData(:,i)],0.05);
+Mse_slr = immse(TData(:,[1 i])*b_slr,TData(:,5));
+MSE_SLR= [MSE_SLR,Mse_slr];
+fprintf(fileID,'%12s %12.4d %12.4d %12.4d %12.4d \r\n',' Linear_Var  '+string(i-1), stats_slr(1) , Mse_slr , stats_slr(2) , stats_slr(1) );
+Yp_slr=[VData(:,1),VData(:,i)]*b_slr;
+figure
+plot(VData(:,i),Yp_slr,'-b',VData(:,i),VData(:,end),'.k')
+title('SLR Var '+string(i)+ ' Model Prediction of Rent-Count V/S True Data')
+xlabel('Variable '+string(i))
+ylabel('Count')
+Plot_name = 'SLR Plot Variable ' + string(i) ;
+% print('Plot_name',-'dpng')
+R_SLR=[R_SLR;r_slr];
+B_SLR=[B_SLR,b_slr];
+dot='Var'+string(i);
+Stats_SLR.dot= stats_slr;
+end
+
+%% LASSO regression
+lambda=0:10:100;
+[B_lasso,S_lasso]=lasso(TData(:,1:4),TData(:,end),'Lambda',lambda);
+MSE_lasso = min(S_lasso.MSE);
+fprintf(fileID,'%12s %12.4d %12.4d %12.4d %12.4d \r\n',' Lasso ', '~',  MSE_lasso , '~' , '~' );
+
+%% Non-Linear Regression
+X=TData(:,2)  ;
+Y=TData(:,5);
+quadfun=@(b,x)(b(1) + b(2)*x +  b(3)*(x.^2));
+expfun=@(b,x)(b(1) + b(2)*exp(-b(3)*x));
+cubicfun=@(b,x)(b(1) + b(2)*x(1) + b(3)*(x.^2) + b(4)*(x.^3));
+fun = { quadfun , expfun , cubicfun };
+beta0=[0;0;0];
+for j=1:3
+    modelfun = cell2mat(fun(j));
+if j==3
+    beta0=[0;0;0;0];
+end
+beta=nlinfit(X,Y,modelfun,beta0);
+Yp=modelfun(beta,TData(:,2));
+NL_Res = Yp - TData(:,5);
+MSE= NL_Res'*(NL_Res);
+MSE=MSE/length(Yp);
+fprintf(fileID,'%12s %12.4d %12.4d %12.4d %12.4d \r\n', func2str(modelfun) , '~', MSE , '~' , '~' );
+figure
+plot(Yp,NL_Res,'xk')
+title('Residual Plot for Non-Linear  ' + string(func2str(modelfun)) + 'Model')
+xlabel('Fitted Values')
+ylabel('residuals')
+print('Nonlinear Residual PLot','-dpng') 
+end
+% print('Nonlinear Residual PLot','-dpng') 
+
+
+fclose(fileID);
+% % data validation plot/ Model Prediction analysis
+
+
